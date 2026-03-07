@@ -48,7 +48,7 @@ def keep_alive():
     t.start()
 
 # --- Configuration ---
-TOKEN = os.environ.get('BOT_TOKEN', '8441747675:AAHsCI4sMLAVBNj-I6ixLYIQsBotFYWhva4')
+TOKEN = os.environ.get('BOT_TOKEN', '8441747675:AAFmtQz1k1l3LSBbNzRte3J9e791K4xXxxY')
 OWNER_ID = 5977475208
 YOUR_USERNAME = 'j4ck_721s'
 UPDATE_CHANNEL = 'https://t.me/j4ck_721'
