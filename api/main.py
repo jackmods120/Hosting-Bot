@@ -21,7 +21,7 @@ import atexit
 import requests
 from flask import Flask, request
 import signal
-import html  # For safe log printing
+import html 
 
 # --- Suppress Flask & Werkzeug Logging ---
 log = logging.getLogger('werkzeug')
@@ -31,10 +31,8 @@ log.setLevel(logging.ERROR)
 app = Flask(__name__)
 
 # --- Configuration (Vercel Mode) ---
-# تۆکێنەکە لە Vercel وەردەگرێت لە بەشی Environment Variables
-TOKEN = os.environ.get('BOT_TOKEN')
-if not TOKEN:
-    raise ValueError("⚠️ BOT_TOKEN نەدۆزرایەوە! تکایە لە Vercel زیادی بکە.")
+# وەرگرتنی تۆکێن، گەر نەبوو ئێرۆر دەگرێت لەجیاتی ئەوەی بوەستێت
+TOKEN = os.environ.get('BOT_TOKEN') or "MISSING_TOKEN"
 
 OWNER_ID = 5977475208
 YOUR_USERNAME = 'j4ck_721s'
@@ -73,9 +71,8 @@ logger = logging.getLogger(__name__)
 
 # --- ReplyKeyboardMarkup Layouts ---
 MAIN_MENU_BUTTONS_LAYOUT = [["ℹ️ دەربارە", "🔗 بانگهێشت"], ["📤 ناردنی فایل", "📂 فایلەکانم"]]
-ADMIN_MENU_BUTTONS_LAYOUT = [["ℹ️ دەربارە", "🔗 بانگهێشت"],["📤 ناردنی فایل", "📂 فایلەکانم"], ["👑 پانێڵی گەشەپێدەر"]]
-OWNER_PANEL_LAYOUT = [["📊 ئاماری بۆت", "💰 لیستی کڕیارەکان"], ["📢 ناردنی گشتی", "🔒 قفڵکردن/کردنەوە"],
-    ["➕ زیادکردنی کڕیار", "⏳ درێژکردنەوەی کات"],["➖ سڕینەوەی کڕیار", "📢 زیادکردنی جۆین"],["📢 سڕینەوەی جۆین", "🆓 بێ بەرامبەر/بەپارە"],["➕ زیادکردنی ئەدمین", "➖ سڕینەوەی ئەدمین"],["📋 لیستی جۆین", "📋 لیستی ئەدمینەکان"], ["🔙 گەڕانەوە بۆ مینیو"]
+ADMIN_MENU_BUTTONS_LAYOUT = [["ℹ️ دەربارە", "🔗 بانگهێشت"],["📤 ناردنی فایل", "📂 فایلەکانم"],["👑 پانێڵی گەشەپێدەر"]]
+OWNER_PANEL_LAYOUT = [["📊 ئاماری بۆت", "💰 لیستی کڕیارەکان"],["📢 ناردنی گشتی", "🔒 قفڵکردن/کردنەوە"],["➕ زیادکردنی کڕیار", "⏳ درێژکردنەوەی کات"],["➖ سڕینەوەی کڕیار", "📢 زیادکردنی جۆین"],["📢 سڕینەوەی جۆین", "🆓 بێ بەرامبەر/بەپارە"],["➕ زیادکردنی ئەدمین", "➖ سڕینەوەی ئەدمین"],["📋 لیستی جۆین", "📋 لیستی ئەدمینەکان"],["🔙 گەڕانەوە بۆ مینیو"]
 ]
 CONTROL_PANEL_LAYOUT = [["▶️ دەستپێکردن", "⏸ وەستاندن"], ["🔄 نوێکردنەوە", "🗑 سڕینەوە"],["📋 لۆگ", "📦 Requirements"],["📥 دابەزاندن", "🔙 گەڕانەوە بۆ مینیو"]
 ]
@@ -375,12 +372,6 @@ def get_bot_uptime(user_id, file_name):
         return f"{hours}h {minutes}m {seconds}s"
     return "0h 0m 0s"
 
-try:
-    init_db()
-    load_data()
-except Exception as e:
-    logger.error(f"Error initializing DB: {e}")
-
 def get_user_folder(user_id):
     user_folder = os.path.join(UPLOAD_BOTS_DIR, str(user_id))
     os.makedirs(user_folder, exist_ok=True)
@@ -451,13 +442,13 @@ def stop_script(user_id, file_name):
 
 # --- Force Join Checker ---
 def check_force_join(user_id):
-    if user_id == OWNER_ID or is_admin(user_id): return True, []
+    if user_id == OWNER_ID or is_admin(user_id): return True,[]
     channels = get_force_channels()
     not_joined =[]
     for channel in channels:
         try:
             status = bot.get_chat_member(channel, user_id).status
-            if status not in ['creator', 'administrator', 'member']: not_joined.append(channel)
+            if status not in['creator', 'administrator', 'member']: not_joined.append(channel)
         except Exception: pass 
     if not_joined: return False, not_joined
     return True,[]
@@ -489,7 +480,7 @@ def send_join_request(chat_id, channels):
 # --- Message Handlers ---
 @bot.message_handler(commands=['start'])
 def start_command(message):
-    clean_expired_subscriptions() # جێگەی auto_cleanup_loop دەگرێتەوە بۆ Vercel
+    clean_expired_subscriptions() 
     user_id = message.from_user.id
     args = message.text.split()
     if len(args) > 1 and args[1].isdigit():
@@ -731,20 +722,36 @@ def handle_control(message):
             bot.send_message(message.chat.id, f"📄 <b>Log:</b>\n<pre>{html.escape(content)}</pre>", parse_mode='HTML')
         else: bot.send_message(message.chat.id, "📄 فایلەکە ڕاوەستاوە، لۆگ سڕاوەتەوە.")
 
-# --- Vercel Webhook Routes ---
-@app.route('/', methods=['GET'])
-def index():
-    return "🚀 Vercel Webhook Hosting Bot is Running!"
 
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    if request.headers.get('content-type') == 'application/json':
-        json_string = request.get_data().decode('utf-8')
-        update = telebot.types.Update.de_json(json_string)
-        bot.process_new_updates([update])
-        return ''
+# --- Vercel Webhook Routes (نوێکراوەتەوە) ---
+# لەمەودوا پێویست ناکات خەمی لینکەکەت بێت، هەرچییەک بێت دەیخوێنێتەوە
+@app.route('/', defaults={'path': ''}, methods=['GET', 'POST'])
+@app.route('/<path:path>', methods=['GET', 'POST'])
+def webhook(path):
+    # پشکنین بۆ ئەوەی بزانین تۆکێن لە Vercel دانراوە یاخود نا
+    if TOKEN == "MISSING_TOKEN":
+        return "⚠️ هەڵە: BOT_TOKEN لەناو Vercel دانەنراوە! تکایە لە Settings > Environment Variables زیادی بکە.", 200
+        
+    # پشکنینی داتابەیس بۆ ئەوەی دڵنیا بین کار دەکات
+    try:
+        init_db()
+        load_data()
+    except Exception as e:
+        print("Database error:", e)
+
+    # وەرگرتنی نامەی تێلیگرام
+    if request.method == 'POST':
+        try:
+            json_string = request.get_data().decode('utf-8')
+            update = telebot.types.Update.de_json(json_string)
+            bot.process_new_updates([update])
+            return 'OK', 200
+        except Exception as e:
+            print(f"Update Error: {e}")
+            return 'Error processed', 200
     else:
-        return 'error', 403
+        # کاتێک لینکەکە لە گۆگڵ دەکەیتەوە ئەمەت پێ دەڵێت
+        return "🚀 Vercel Webhook Hosting Bot is Running Perfectly!", 200
 
 def cleanup():
     for key in list(bot_scripts.keys()):
