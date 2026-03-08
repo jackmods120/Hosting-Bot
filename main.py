@@ -108,6 +108,7 @@ OWNER_PANEL_LAYOUT = [
     ["🆓 بێ بەرامبەر/بەپارە", "➕ زیادکردنی ئەدمین"],
     ["➖ سڕینەوەی ئەدمین", "📋 لیستی جۆین"],
     ["📋 لیستی ئەدمینەکان", "👥 لیستی بەکارهێنەران"],
+    ["🗑️ سڕینەوەی هەموو داتا"],
     ["🔙 گەڕانەوە بۆ مینیو"]
 ]
 
@@ -819,7 +820,51 @@ def check_join_callback(call):
         bot.answer_callback_query(call.id, "❌ هێشتا جۆینت نەکردووە!", show_alert=True)
 
 # --- BUY SUBSCRIPTION HANDLER ---
-@bot.callback_query_handler(func=lambda call: call.data == "buy_subscription")
+@bot.callback_query_handler(func=lambda call: call.data in ["confirm_wipe_data", "cancel_wipe_data"])
+def wipe_data_callback(call):
+    if call.from_user.id != OWNER_ID:
+        return bot.answer_callback_query(call.id, "⛔ تەنیا خاوەن.")
+
+    if call.data == "cancel_wipe_data":
+        bot.edit_message_text("❌ هەڵوەشێنرایەوە.", call.message.chat.id, call.message.message_id)
+        return bot.answer_callback_query(call.id)
+
+    # --- سڕینەوەی هەموو داتا ---
+    bot.edit_message_text("🗑️ دەسڕێتەوە...", call.message.chat.id, call.message.message_id)
+    bot.answer_callback_query(call.id)
+
+    # وەستاندنی هەموو بۆتەکان
+    for key in list(bot_scripts.keys()):
+        try:
+            parts = key.split('_', 1)
+            if len(parts) == 2:
+                stop_script(parts[0], parts[1])
+        except: pass
+
+    # سڕینەوەی فایلەکانی بەکارهێنەران
+    try:
+        if os.path.exists(UPLOAD_BOTS_DIR):
+            shutil.rmtree(UPLOAD_BOTS_DIR)
+            os.makedirs(UPLOAD_BOTS_DIR, exist_ok=True)
+    except: pass
+
+    # سڕینەوەی دیتابەیس
+    try:
+        if os.path.exists(DATABASE_PATH):
+            os.remove(DATABASE_PATH)
+    except: pass
+
+    # سفرکردنەوەی memory
+    bot_scripts.clear()
+    user_files.clear()
+    user_selected_file.clear()
+    bot_usernames_cache.clear()
+    pending_referrals.clear()
+
+    # دووبارە دروستکردنی دیتابەیس خاوەن
+    init_db()
+
+    bot.send_message(call.message.chat.id, "✅ هەموو داتاکان سڕایەوە و میمۆری سفر بووەوە.")
 def buy_subscription_callback(call):
     text = (
         "💎 <b>کڕینی پلان (Premium)</b>\n\n"
@@ -937,7 +982,7 @@ def admin_panel_button(message):
     "📢 زیادکردنی جۆین", "📢 سڕینەوەی جۆین", "📋 لیستی جۆین", "🔒 قفڵکردن/کردنەوە",
     "🆓 بێ بەرامبەر/بەپارە", "➕ زیادکردنی ئەدمین", "➖ سڕینەوەی ئەدمین", 
     "📋 لیستی ئەدمینەکان", "📢 ناردنی گشتی", "⏳ درێژکردنەوەی کات",
-    "👥 لیستی بەکارهێنەران", "⏱️ کەمکردنەوەی کات"
+    "👥 لیستی بەکارهێنەران", "⏱️ کەمکردنەوەی کات", "🗑️ سڕینەوەی هەموو داتا"
 ])
 def owner_panel_actions(message):
     user_id = message.from_user.id
@@ -1043,6 +1088,8 @@ def owner_panel_actions(message):
     elif action == "⏱️ کەمکردنەوەی کات":
         msg = bot.send_message(message.chat.id, "📝 ئایدی بەکارهێنەر بنێرە:")
         bot.register_next_step_handler(msg, process_reduce_sub_step1)
+
+    elif action == "👥 لیستی بەکارهێنەران":
         if user_id != OWNER_ID and not is_admin(user_id): return
         with DB_LOCK:
             conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
@@ -1053,7 +1100,6 @@ def owner_panel_actions(message):
         if not rows:
             bot.send_message(message.chat.id, "❌ هیچ بەکارهێنەرێک نییە.")
             return
-        # Send in pages of 50 users per message
         page_size = 50
         pages = [rows[i:i+page_size] for i in range(0, len(rows), page_size)]
         for page_num, page in enumerate(pages, 1):
@@ -1063,6 +1109,20 @@ def owner_panel_actions(message):
                 user_part = f"@{uname}" if uname else "بێ یوزەر"
                 lines.append(f"👤 <a href='tg://user?id={uid}'>{name_part}</a> | {user_part} | <code>{uid}</code>")
             bot.send_message(message.chat.id, "\n".join(lines), parse_mode='HTML')
+
+    elif action == "🗑️ سڕینەوەی هەموو داتا":
+        if user_id != OWNER_ID: return
+        markup = types.InlineKeyboardMarkup()
+        markup.row(
+            types.InlineKeyboardButton("✅ بەڵێ، بیسرەوە", callback_data="confirm_wipe_data"),
+            types.InlineKeyboardButton("❌ نەخێر", callback_data="cancel_wipe_data")
+        )
+        bot.send_message(message.chat.id,
+            "⚠️ <b>دڵنیایت؟</b>\n\n"
+            "هەموو ئەمانە سڕدەرێنەوە:\n"
+            "• دیتابەیس\n• فایلەکانی بەکارهێنەران\n• هەموو بۆتە ڕاکێشراوەکان\n\n"
+            "<b>گەڕانەوەی نییە!</b>",
+            parse_mode='HTML', reply_markup=markup)
 
 # --- Helper Functions ---
 def process_broadcast(message):
@@ -1277,14 +1337,11 @@ def handle_file_upload(message):
                     if token:
                         blocked, reason = is_hosting_bot_token(token)
                         if blocked:
-                            # فایلەکە بسرەوە و پەیام بنێرە
                             try: shutil.rmtree(user_folder) if not os.listdir(user_folder) else os.remove(os.path.join(user_folder, f))
                             except: pass
                             bot.delete_message(message.chat.id, progress.message_id)
                             return bot.send_message(message.chat.id,
-                                f"🚫 <b>ناتوانیت بۆتی هۆستینگ لێرە هۆست بکەیت!</b>\n\n"
-                                f"❌ {reason}\n\n"
-                                f"ئەم بۆتە بۆ هۆست کردنی بۆتی کەسی خۆت دروست کراوە، نەک بۆ هۆست کردنی بۆتی هۆستینگ.",
+                                "❌ ببوورە کێشە لە فایلەکەت هەیە، فایلێکی دروست بنێرە.",
                                 parse_mode='HTML')
                     tid, tuname = (token.split(':')[0], get_bot_username_from_token(token)) if token else (None, "N/A")
                     update_user_file_db(user_id, f, 'py', 'approved', tid, tuname)
@@ -1299,10 +1356,7 @@ def handle_file_upload(message):
                     except: pass
                     bot.delete_message(message.chat.id, progress.message_id)
                     return bot.send_message(message.chat.id,
-                        f"🚫 <b>ناتوانیت بۆتی هۆستینگ لێرە هۆست بکەیت!</b>\n\n"
-                        f"❌ {reason}\n\n"
-                        f"ئەم بۆتە بۆ هۆست کردنی بۆتی کەسی خۆت دروست کراوە، نەک بۆ هۆست کردنی بۆتی هۆستینگ.",
-                        parse_mode='HTML')
+                        "❌ ببوورە کێشە لە فایلەکەت هەیە، فایلێکی دروست بنێرە.")
             tid, tuname = (token.split(':')[0], get_bot_username_from_token(token)) if token else (None, "N/A")
             update_user_file_db(user_id, file_name, 'py', 'approved', tid, tuname)
             user_files.setdefault(user_id, []).append((file_name, 'py', 'approved', tid, tuname))
@@ -1431,10 +1485,9 @@ def handle_control(message):
                 start_script(user_id, file_name)
                 bot.send_message(message.chat.id, "✅ دەستی پێکرد.")
             except ValueError as e:
-                if "HOSTING_BOT_BLOCKED" in str(e):
-                    bot.send_message(message.chat.id, "🚫 ببوورە کێشە لە فایلەکەت هەیە، فایلێکی دروست بنێرە.")
-                else:
-                    bot.send_message(message.chat.id, f"❌ هەڵە: {e}")
+                bot.send_message(message.chat.id, "❌ ببوورە کێشە لە فایلەکەت هەیە، فایلێکی دروست بنێرە.")
+            except Exception as e:
+                bot.send_message(message.chat.id, f"❌ هەڵە: {e}")
     elif action == "⏸ وەستاندن":
         stop_script(user_id, file_name); bot.send_message(message.chat.id, "🛑 وەستاندرا.")
     elif action == "🔄 نوێکردنەوە":
@@ -1444,10 +1497,9 @@ def handle_control(message):
             start_script(user_id, file_name)
             bot.send_message(message.chat.id, "🔄 نوێکرایەوە.")
         except ValueError as e:
-            if "HOSTING_BOT_BLOCKED" in str(e):
-                bot.send_message(message.chat.id, "🚫 ببوورە کێشە لە فایلەکەت هەیە، فایلێکی دروست بنێرە.")
-            else:
-                bot.send_message(message.chat.id, f"❌ هەڵە: {e}")
+            bot.send_message(message.chat.id, "❌ ببوورە کێشە لە فایلەکەت هەیە، فایلێکی دروست بنێرە.")
+        except Exception as e:
+            bot.send_message(message.chat.id, f"❌ هەڵە: {e}")
     elif action == "📥 دابەزاندن":
         path = os.path.join(get_user_folder(user_id), file_name)
         if os.path.exists(path): bot.send_document(message.chat.id, open(path, 'rb'))
