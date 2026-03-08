@@ -494,6 +494,29 @@ def get_bot_uptime(user_id, file_name):
 init_db()
 load_data()
 
+def auto_restart_bots():
+    """پاش ریستارتی سیستەم، هەموو بۆتەکانی approved ئۆتۆماتیک دەستیان پێدەکاتەوە."""
+    restarted = 0
+    failed = 0
+    for user_id, files in list(user_files.items()):
+        for file_info in files:
+            file_name = file_info[0]
+            status = file_info[2]
+            if status != 'approved':
+                continue
+            user_folder = get_user_folder(user_id)
+            script_path = os.path.join(user_folder, file_name)
+            if not os.path.isfile(script_path):
+                continue
+            try:
+                start_script(user_id, file_name)
+                restarted += 1
+                logger.info(f"✅ ئۆتۆ-ریستارت: {file_name} بۆ بەکارهێنەر {user_id}")
+            except Exception as e:
+                failed += 1
+                logger.error(f"❌ شکستی ئۆتۆ-ریستارت: {file_name} بۆ {user_id} — {e}")
+    logger.info(f"🔄 ئۆتۆ-ریستارت تەواو بوو: {restarted} سەرکەوتوو، {failed} شکست")
+
 def get_user_folder(user_id):
     user_folder = os.path.join(UPLOAD_BOTS_DIR, str(user_id))
     os.makedirs(user_folder, exist_ok=True)
@@ -1315,7 +1338,11 @@ if __name__ == '__main__':
     print("🚀 بۆتی Hosting دەستی پێکرد بە سەرکەوتوویی!")
     print(f"👑 خاوەن: {OWNER_ID}")
     print("=" * 50)
-    
+
+    # Auto-restart all approved bots after system restart
+    auto_restart_thread = threading.Thread(target=auto_restart_bots, daemon=True)
+    auto_restart_thread.start()
+
     # Start auto cleanup thread
     cleanup_thread = threading.Thread(target=auto_cleanup_loop, daemon=True)
     cleanup_thread.start()
