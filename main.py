@@ -3,7 +3,7 @@
 #  ╭───𓆩🛡️𓆪───╮
 #  👨‍💻 𝘿𝙚𝙫: @j4ck_721s  
 #  👤 𝙉𝙖𝙢𝙚: ﮼جــاڪ ,.⏳🤎:)
-#   📢 𝘾𝙝: @j4ck_721s
+#   📢 𝘾𝙝: @jack_721_mod
 import telebot
 import subprocess
 import os
@@ -493,29 +493,6 @@ def get_bot_uptime(user_id, file_name):
 
 init_db()
 load_data()
-
-def auto_restart_bots():
-    """پاش ریستارتی سیستەم، هەموو بۆتەکانی approved ئۆتۆماتیک دەستیان پێدەکاتەوە."""
-    restarted = 0
-    failed = 0
-    for user_id, files in list(user_files.items()):
-        for file_info in files:
-            file_name = file_info[0]
-            status = file_info[2]
-            if status != 'approved':
-                continue
-            user_folder = get_user_folder(user_id)
-            script_path = os.path.join(user_folder, file_name)
-            if not os.path.isfile(script_path):
-                continue
-            try:
-                start_script(user_id, file_name)
-                restarted += 1
-                logger.info(f"✅ ئۆتۆ-ریستارت: {file_name} بۆ بەکارهێنەر {user_id}")
-            except Exception as e:
-                failed += 1
-                logger.error(f"❌ شکستی ئۆتۆ-ریستارت: {file_name} بۆ {user_id} — {e}")
-    logger.info(f"🔄 ئۆتۆ-ریستارت تەواو بوو: {restarted} سەرکەوتوو، {failed} شکست")
 
 def get_user_folder(user_id):
     user_folder = os.path.join(UPLOAD_BOTS_DIR, str(user_id))
@@ -1165,12 +1142,35 @@ def handle_file_upload(message):
             for f in os.listdir(user_folder):
                 if f.endswith('.py'):
                     token = extract_bot_token(os.path.join(user_folder, f))
+                    if token:
+                        blocked, reason = is_hosting_bot_token(token)
+                        if blocked:
+                            # فایلەکە بسرەوە و پەیام بنێرە
+                            try: shutil.rmtree(user_folder) if not os.listdir(user_folder) else os.remove(os.path.join(user_folder, f))
+                            except: pass
+                            bot.delete_message(message.chat.id, progress.message_id)
+                            return bot.send_message(message.chat.id,
+                                f"🚫 <b>ناتوانیت بۆتی هۆستینگ لێرە هۆست بکەیت!</b>\n\n"
+                                f"❌ {reason}\n\n"
+                                f"ئەم بۆتە بۆ هۆست کردنی بۆتی کەسی خۆت دروست کراوە، نەک بۆ هۆست کردنی بۆتی هۆستینگ.",
+                                parse_mode='HTML')
                     tid, tuname = (token.split(':')[0], get_bot_username_from_token(token)) if token else (None, "N/A")
                     update_user_file_db(user_id, f, 'py', 'approved', tid, tuname)
                     user_files.setdefault(user_id, []).append((f, 'py', 'approved', tid, tuname))
                     target_py = f
         else:
             token = extract_bot_token(file_path)
+            if token:
+                blocked, reason = is_hosting_bot_token(token)
+                if blocked:
+                    try: os.remove(file_path)
+                    except: pass
+                    bot.delete_message(message.chat.id, progress.message_id)
+                    return bot.send_message(message.chat.id,
+                        f"🚫 <b>ناتوانیت بۆتی هۆستینگ لێرە هۆست بکەیت!</b>\n\n"
+                        f"❌ {reason}\n\n"
+                        f"ئەم بۆتە بۆ هۆست کردنی بۆتی کەسی خۆت دروست کراوە، نەک بۆ هۆست کردنی بۆتی هۆستینگ.",
+                        parse_mode='HTML')
             tid, tuname = (token.split(':')[0], get_bot_username_from_token(token)) if token else (None, "N/A")
             update_user_file_db(user_id, file_name, 'py', 'approved', tid, tuname)
             user_files.setdefault(user_id, []).append((file_name, 'py', 'approved', tid, tuname))
@@ -1221,6 +1221,37 @@ def extract_bot_token(path):
             match = re.search(r'\b\d{8,10}:[A-Za-z0-9_-]{35}\b', f.read())
             return match.group(0) if match else None
     except: return None
+
+def is_hosting_bot_token(token):
+    """
+    پشکنین دەکات ئایا تۆکێنەکە بۆ بۆتێکی هۆستینگ (ئەمجۆرەی بۆتی خۆمان) یە.
+    ئەگەر تۆکێنەکە هەمان بۆتی ئێمەیە، یان بۆتێکی تریش بوو کە لە دیتابەیسمان
+    تۆمارکراوە وەک هۆستینگ بۆت — ڕەتی دەکاتەوە.
+    """
+    # 1. هەمان تۆکێنی بۆتی سەرەکی
+    if token == TOKEN:
+        return True, "ئەمە تۆکێنی بۆتی هۆستینگەکەی خۆمانە"
+
+    # 2. پشکنین لە دیتابەیس — ئایا ئەم تۆکێنە پێشتر هۆست کراوە
+    token_id = token.split(':')[0] if ':' in token else token
+    with DB_LOCK:
+        conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
+        c = conn.cursor()
+        c.execute('SELECT user_id FROM user_files WHERE bot_token_id = ?', (token_id,))
+        result = c.fetchone()
+        conn.close()
+    if result:
+        return True, "ئەم بۆتە پێشتر لەناو سیستەمەکەمان هۆست کراوە"
+
+    # 3. پشکنین لە Telegram — ئایا بۆتێکی هۆستینگ دیکەیە
+    try:
+        temp_bot = telebot.TeleBot(token)
+        me = temp_bot.get_me()
+        # ئەگەر بۆتەکە نەتوانی گەت بکات = تۆکێن هەڵەیە
+    except Exception:
+        return False, None  # تۆکێن هەڵەیە، بەڵام ئەمە کێشەی جیاوازە
+
+    return False, None
 
 def list_user_files(message):
     user_id = message.from_user.id
@@ -1338,11 +1369,7 @@ if __name__ == '__main__':
     print("🚀 بۆتی Hosting دەستی پێکرد بە سەرکەوتوویی!")
     print(f"👑 خاوەن: {OWNER_ID}")
     print("=" * 50)
-
-    # Auto-restart all approved bots after system restart
-    auto_restart_thread = threading.Thread(target=auto_restart_bots, daemon=True)
-    auto_restart_thread.start()
-
+    
     # Start auto cleanup thread
     cleanup_thread = threading.Thread(target=auto_cleanup_loop, daemon=True)
     cleanup_thread.start()
