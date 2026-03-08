@@ -107,6 +107,7 @@ OWNER_PANEL_LAYOUT = [
     ["📢 سڕینەوەی جۆین", "🆓 بێ بەرامبەر/بەپارە"],
     ["➕ زیادکردنی ئەدمین", "➖ سڕینەوەی ئەدمین"],
     ["📋 لیستی جۆین", "📋 لیستی ئەدمینەکان"],
+    ["👥 لیستی بەکارهێنەران"],
     ["🔙 گەڕانەوە بۆ مینیو"]
 ]
 
@@ -140,6 +141,10 @@ def init_db():
             c.execute('ALTER TABLE active_users ADD COLUMN slots INTEGER DEFAULT 0')
         if 'referred_by' not in au_columns:
             c.execute('ALTER TABLE active_users ADD COLUMN referred_by INTEGER')
+        if 'first_name' not in au_columns:
+            c.execute('ALTER TABLE active_users ADD COLUMN first_name TEXT')
+        if 'username' not in au_columns:
+            c.execute('ALTER TABLE active_users ADD COLUMN username TEXT')
 
         c.execute('''CREATE TABLE IF NOT EXISTS purchases
                      (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, purchase_date TEXT, days_count INTEGER, price REAL, expiry_date TEXT)''')
@@ -169,7 +174,7 @@ def load_data():
         conn.close()
 
 # --- Database Helpers ---
-def add_user_to_db(user_id, referrer_id=None):
+def add_user_to_db(user_id, referrer_id=None, first_name=None, username=None):
     with DB_LOCK:
         conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
         c = conn.cursor()
@@ -178,9 +183,13 @@ def add_user_to_db(user_id, referrer_id=None):
         
         is_new_user = False
         if exists is None:
-            c.execute('INSERT INTO active_users (user_id, slots, referred_by) VALUES (?, ?, ?)', 
-                      (user_id, 0, referrer_id))
+            c.execute('INSERT INTO active_users (user_id, slots, referred_by, first_name, username) VALUES (?, ?, ?, ?, ?)', 
+                      (user_id, 0, referrer_id, first_name, username))
             is_new_user = True
+        else:
+            if first_name or username:
+                c.execute('UPDATE active_users SET first_name=?, username=? WHERE user_id=?',
+                          (first_name, username, user_id))
         
         conn.commit()
         conn.close()
@@ -704,7 +713,9 @@ def process_successful_entry(message):
         referrer_id = pop_pending_referral(user_id)
     else:
         pop_pending_referral(user_id)
-    is_new_user = add_user_to_db(user_id, referrer_id)
+    first_name = message.from_user.first_name
+    username = message.from_user.username
+    is_new_user = add_user_to_db(user_id, referrer_id, first_name, username)
     
     if is_new_user and referrer_id:
         increment_user_slots(referrer_id)
@@ -885,7 +896,7 @@ def admin_panel_button(message):
     "📊 ئاماری بۆت", "💰 لیستی کڕیارەکان", "➕ زیادکردنی کڕیار", "➖ سڕینەوەی کڕیار",
     "📢 زیادکردنی جۆین", "📢 سڕینەوەی جۆین", "📋 لیستی جۆین", "🔒 قفڵکردن/کردنەوە",
     "🆓 بێ بەرامبەر/بەپارە", "➕ زیادکردنی ئەدمین", "➖ سڕینەوەی ئەدمین", 
-    "📋 لیستی ئەدمینەکان", "📢 ناردنی گشتی", "⏳ درێژکردنەوەی کات"
+    "📋 لیستی ئەدمینەکان", "📢 ناردنی گشتی", "⏳ درێژکردنەوەی کات", "👥 لیستی بەکارهێنەران"
 ])
 def owner_panel_actions(message):
     user_id = message.from_user.id
@@ -987,6 +998,28 @@ def owner_panel_actions(message):
         admins = get_all_admins()
         msg = "👥 <b>لیست:</b>\n" + "\n".join([f"👤 {a['user_id']}" for a in admins])
         bot.send_message(message.chat.id, msg, parse_mode='HTML')
+
+    elif action == "👥 لیستی بەکارهێنەران":
+        if user_id != OWNER_ID and not is_admin(user_id): return
+        with DB_LOCK:
+            conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
+            c = conn.cursor()
+            c.execute('SELECT user_id, first_name, username FROM active_users ORDER BY rowid DESC')
+            rows = c.fetchall()
+            conn.close()
+        if not rows:
+            bot.send_message(message.chat.id, "❌ هیچ بەکارهێنەرێک نییە.")
+            return
+        # Send in pages of 50 users per message
+        page_size = 50
+        pages = [rows[i:i+page_size] for i in range(0, len(rows), page_size)]
+        for page_num, page in enumerate(pages, 1):
+            lines = [f"👥 <b>لیستی بەکارهێنەران ({page_num}/{len(pages)}) — کۆی: {len(rows)}</b>\n"]
+            for uid, fname, uname in page:
+                name_part = fname or "بێ ناو"
+                user_part = f"@{uname}" if uname else "بێ یوزەر"
+                lines.append(f"👤 <a href='tg://user?id={uid}'>{name_part}</a> | {user_part} | <code>{uid}</code>")
+            bot.send_message(message.chat.id, "\n".join(lines), parse_mode='HTML')
 
 # --- Helper Functions ---
 def process_broadcast(message):
