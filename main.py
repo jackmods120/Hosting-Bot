@@ -840,6 +840,13 @@ def wipe_data_callback(call):
     bot.edit_message_text("🗑️ دەسڕێتەوە...", call.message.chat.id, call.message.message_id)
     bot.answer_callback_query(call.id)
 
+    # سفرکردنەوەی memory سەرەتا
+    bot_scripts.clear()
+    user_files.clear()
+    user_selected_file.clear()
+    bot_usernames_cache.clear()
+    pending_referrals.clear()
+
     # وەستاندنی هەموو بۆتەکان
     for key in list(bot_scripts.keys()):
         try:
@@ -861,13 +868,6 @@ def wipe_data_callback(call):
             shutil.rmtree(IROTECH_DIR)
         os.makedirs(IROTECH_DIR, exist_ok=True)
     except: pass
-
-    # سفرکردنەوەی memory
-    bot_scripts.clear()
-    user_files.clear()
-    user_selected_file.clear()
-    bot_usernames_cache.clear()
-    pending_referrals.clear()
 
     # دووبارە دروستکردنی دیتابەیس خاوەن
     init_db()
@@ -1420,11 +1420,17 @@ def extract_bot_token(path):
 
 def is_hosting_bot_token(token):
     """
-    تەنیا بلۆک دەکات ئەگەر ئەم تۆکێنە پێشتر لە دیتابەیس هۆست کراوەبێت.
-    بۆتی خۆمان بلۆک ناکرێت — تەنیا بۆتی بەکارهێنەرانی تر.
+    تەنیا بلۆک دەکات ئەگەر ئەم تۆکێنە پێشتر هۆست کراوەبێت (دیتابەیس + memory).
     """
     token_id = token.split(':')[0] if ':' in token else token
 
+    # 1. پشکنین لە memory
+    for uid, files in user_files.items():
+        for f in files:
+            if f[3] == token_id:
+                return True, "ئەم بۆتە پێشتر هۆست کراوە"
+
+    # 2. پشکنین لە دیتابەیس
     try:
         with DB_LOCK:
             conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
