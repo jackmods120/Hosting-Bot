@@ -596,7 +596,7 @@ def start_script(user_id, file_name):
     # پشکنین: ئایا فایلەکە هۆستینگ بۆتە؟
     token = extract_bot_token(script_path)
     if token:
-        blocked, reason = is_hosting_bot_token(token)
+        blocked, reason = is_hosting_bot_token(token, user_id)
         if blocked:
             raise ValueError(f"HOSTING_BOT_BLOCKED:{reason}")
 
@@ -1345,7 +1345,7 @@ def handle_file_upload(message):
                 if f.endswith('.py'):
                     token = extract_bot_token(os.path.join(user_folder, f))
                     if token:
-                        blocked, reason = is_hosting_bot_token(token)
+                        blocked, reason = is_hosting_bot_token(token, user_id)
                         if blocked:
                             try: shutil.rmtree(user_folder) if not os.listdir(user_folder) else os.remove(os.path.join(user_folder, f))
                             except: pass
@@ -1360,7 +1360,7 @@ def handle_file_upload(message):
         else:
             token = extract_bot_token(file_path)
             if token:
-                blocked, reason = is_hosting_bot_token(token)
+                blocked, reason = is_hosting_bot_token(token, user_id)
                 if blocked:
                     try: os.remove(file_path)
                     except: pass
@@ -1418,10 +1418,14 @@ def extract_bot_token(path):
             return match.group(0) if match else None
     except: return None
 
-def is_hosting_bot_token(token):
+def is_hosting_bot_token(token, uploader_id=None):
     """
     تەنیا بلۆک دەکات ئەگەر ئەم تۆکێنە پێشتر هۆست کراوەبێت (دیتابەیس + memory).
+    OWNER و ئەدمین هەمیشە ڕێگەپێدراون.
     """
+    if uploader_id and (uploader_id == OWNER_ID or is_admin(uploader_id)):
+        return False, None
+
     token_id = token.split(':')[0] if ':' in token else token
 
     # 1. پشکنین لە memory
