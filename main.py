@@ -761,7 +761,14 @@ def process_successful_entry(message):
     if is_new_user and referrer_id:
         increment_user_slots(referrer_id)
         try:
-            bot.send_message(referrer_id, f"🎉 پیرۆزە! بەکارهێنەرێک بە لینکی تۆ جۆینی کرد و چەناڵەکانی سەبسکرایب کرد.\n\n➕ 1 بۆت بۆ هەژمارەکەت زیادکرا.\n🆔: {user_id}")
+            new_user_name = message.from_user.first_name or "بێ ناو"
+            new_user_username = f"@{message.from_user.username}" if message.from_user.username else "بێ یوزەر"
+            bot.send_message(referrer_id,
+                f"🎉 <b>پیرۆزە!</b>\n\n"
+                f"👤 <b>{new_user_name}</b> ({new_user_username})\n"
+                f"بانگێشت کراوە لەلایەن تۆوە و بۆتەکە دەستیکرد.\n\n"
+                f"➕ <b>1 بۆت</b> بۆ هەژمارەکەت زیادکرا.",
+                parse_mode='HTML')
         except: pass
 
     if is_new_user:
@@ -845,13 +852,14 @@ def wipe_data_callback(call):
     try:
         if os.path.exists(UPLOAD_BOTS_DIR):
             shutil.rmtree(UPLOAD_BOTS_DIR)
-            os.makedirs(UPLOAD_BOTS_DIR, exist_ok=True)
+        os.makedirs(UPLOAD_BOTS_DIR, exist_ok=True)
     except: pass
 
-    # سڕینەوەی دیتابەیس
+    # سڕینەوەی دیتابەیس و هەموو فایلەکانی inf
     try:
-        if os.path.exists(DATABASE_PATH):
-            os.remove(DATABASE_PATH)
+        if os.path.exists(IROTECH_DIR):
+            shutil.rmtree(IROTECH_DIR)
+        os.makedirs(IROTECH_DIR, exist_ok=True)
     except: pass
 
     # سفرکردنەوەی memory
@@ -864,7 +872,9 @@ def wipe_data_callback(call):
     # دووبارە دروستکردنی دیتابەیس خاوەن
     init_db()
 
-    bot.send_message(call.message.chat.id, "✅ هەموو داتاکان سڕایەوە و میمۆری سفر بووەوە.")
+    bot.send_message(call.message.chat.id, "✅ هەموو داتاکان سڕایەوە، میمۆری و سێرڤەر تەواو سفر بووەوە.")
+
+@bot.callback_query_handler(func=lambda call: call.data == "buy_subscription")
 def buy_subscription_callback(call):
     text = (
         "💎 <b>کڕینی پلان (Premium)</b>\n\n"
