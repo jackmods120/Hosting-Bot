@@ -1420,32 +1420,22 @@ def extract_bot_token(path):
 
 def is_hosting_bot_token(token):
     """
-    پشکنین دەکات ئایا تۆکێنەکە بۆ بۆتێکی هۆستینگ (ئەمجۆرەی بۆتی خۆمان) یە.
-    ئەگەر تۆکێنەکە هەمان بۆتی ئێمەیە، یان بۆتێکی تریش بوو کە لە دیتابەیسمان
-    تۆمارکراوە وەک هۆستینگ بۆت — ڕەتی دەکاتەوە.
+    تەنیا بلۆک دەکات ئەگەر ئەم تۆکێنە پێشتر لە دیتابەیس هۆست کراوەبێت.
+    بۆتی خۆمان بلۆک ناکرێت — تەنیا بۆتی بەکارهێنەرانی تر.
     """
-    # 1. هەمان تۆکێنی بۆتی سەرەکی
-    if token == TOKEN:
-        return True, "ئەمە تۆکێنی بۆتی هۆستینگەکەی خۆمانە"
-
-    # 2. پشکنین لە دیتابەیس — ئایا ئەم تۆکێنە پێشتر هۆست کراوە
     token_id = token.split(':')[0] if ':' in token else token
-    with DB_LOCK:
-        conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
-        c = conn.cursor()
-        c.execute('SELECT user_id FROM user_files WHERE bot_token_id = ?', (token_id,))
-        result = c.fetchone()
-        conn.close()
-    if result:
-        return True, "ئەم بۆتە پێشتر لەناو سیستەمەکەمان هۆست کراوە"
 
-    # 3. پشکنین لە Telegram — ئایا بۆتێکی هۆستینگ دیکەیە
     try:
-        temp_bot = telebot.TeleBot(token)
-        me = temp_bot.get_me()
-        # ئەگەر بۆتەکە نەتوانی گەت بکات = تۆکێن هەڵەیە
-    except Exception:
-        return False, None  # تۆکێن هەڵەیە، بەڵام ئەمە کێشەی جیاوازە
+        with DB_LOCK:
+            conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
+            c = conn.cursor()
+            c.execute('SELECT user_id FROM user_files WHERE bot_token_id = ?', (token_id,))
+            result = c.fetchone()
+            conn.close()
+        if result:
+            return True, "ئەم بۆتە پێشتر هۆست کراوە"
+    except:
+        pass
 
     return False, None
 
