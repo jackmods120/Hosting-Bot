@@ -146,6 +146,7 @@ def init_db():
         c.execute('''CREATE TABLE IF NOT EXISTS admins (user_id INTEGER PRIMARY KEY, added_by INTEGER, added_date TEXT)''')
         c.execute('''CREATE TABLE IF NOT EXISTS bot_settings (setting_key TEXT PRIMARY KEY, setting_value TEXT)''')
         c.execute('''CREATE TABLE IF NOT EXISTS force_join_channels (channel_username TEXT PRIMARY KEY)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS pending_referrals_db (user_id INTEGER PRIMARY KEY, referrer_id INTEGER)''')
         
         c.execute('INSERT OR IGNORE INTO bot_settings (setting_key, setting_value) VALUES (?, ?)', ('bot_locked', 'false'))
         c.execute('INSERT OR IGNORE INTO bot_settings (setting_key, setting_value) VALUES (?, ?)', ('free_mode', 'false'))
@@ -352,6 +353,26 @@ def get_force_channels():
             channels.append(row[0])
         conn.close()
     return channels
+
+def save_pending_referral(user_id, referrer_id):
+    with DB_LOCK:
+        conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
+        c = conn.cursor()
+        c.execute('INSERT OR REPLACE INTO pending_referrals_db (user_id, referrer_id) VALUES (?, ?)', (user_id, referrer_id))
+        conn.commit()
+        conn.close()
+
+def pop_pending_referral(user_id):
+    with DB_LOCK:
+        conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
+        c = conn.cursor()
+        c.execute('SELECT referrer_id FROM pending_referrals_db WHERE user_id = ?', (user_id,))
+        result = c.fetchone()
+        if result:
+            c.execute('DELETE FROM pending_referrals_db WHERE user_id = ?', (user_id,))
+            conn.commit()
+        conn.close()
+        return result[0] if result else None
 
 def is_admin(user_id):
     if user_id == OWNER_ID:
@@ -666,6 +687,7 @@ def start_command(message):
         potential_referrer = int(args[1])
         if potential_referrer != user_id:
             pending_referrals[user_id] = potential_referrer
+            save_pending_referral(user_id, potential_referrer)
 
     is_joined, missing_channels = check_force_join(user_id)
     
@@ -678,6 +700,10 @@ def start_command(message):
 def process_successful_entry(message):
     user_id = message.from_user.id
     referrer_id = pending_referrals.pop(user_id, None)
+    if referrer_id is None:
+        referrer_id = pop_pending_referral(user_id)
+    else:
+        pop_pending_referral(user_id)
     is_new_user = add_user_to_db(user_id, referrer_id)
     
     if is_new_user and referrer_id:
