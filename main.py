@@ -103,11 +103,11 @@ OWNER_PANEL_LAYOUT = [
     ["📊 ئاماری بۆت", "💰 لیستی کڕیارەکان"],
     ["📢 ناردنی گشتی", "🔒 قفڵکردن/کردنەوە"],
     ["➕ زیادکردنی کڕیار", "⏳ درێژکردنەوەی کات"], 
-    ["➖ سڕینەوەی کڕیار", "📢 زیادکردنی جۆین"],
-    ["📢 سڕینەوەی جۆین", "🆓 بێ بەرامبەر/بەپارە"],
-    ["➕ زیادکردنی ئەدمین", "➖ سڕینەوەی ئەدمین"],
-    ["📋 لیستی جۆین", "📋 لیستی ئەدمینەکان"],
-    ["👥 لیستی بەکارهێنەران"],
+    ["➖ سڕینەوەی کڕیار", "⏱️ کەمکردنەوەی کات"],
+    ["📢 زیادکردنی جۆین", "📢 سڕینەوەی جۆین"],
+    ["🆓 بێ بەرامبەر/بەپارە", "➕ زیادکردنی ئەدمین"],
+    ["➖ سڕینەوەی ئەدمین", "📋 لیستی جۆین"],
+    ["📋 لیستی ئەدمینەکان", "👥 لیستی بەکارهێنەران"],
     ["🔙 گەڕانەوە بۆ مینیو"]
 ]
 
@@ -259,18 +259,18 @@ def get_user_active_subscription(user_id):
         conn.close()
         return result[0] if result else None
 
-def add_subscription_manual(user_id, days):
+def add_subscription_manual(user_id, total_minutes):
     with DB_LOCK:
         conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
         c = conn.cursor()
         purchase_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        expiry_date = (datetime.now() + timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
+        expiry_date = (datetime.now() + timedelta(minutes=total_minutes)).strftime('%Y-%m-%d %H:%M:%S')
         c.execute('INSERT INTO purchases (user_id, purchase_date, days_count, price, expiry_date) VALUES (?, ?, ?, ?, ?)',
-                  (user_id, purchase_date, days, 0.0, expiry_date))
+                  (user_id, purchase_date, total_minutes, 0.0, expiry_date))
         conn.commit()
         conn.close()
 
-def extend_subscription_db(user_id, days):
+def extend_subscription_db(user_id, total_minutes):
     with DB_LOCK:
         conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
         c = conn.cursor()
@@ -285,13 +285,13 @@ def extend_subscription_db(user_id, days):
             try:
                 current_expiry = datetime.strptime(result[0], '%Y-%m-%d %H:%M:%S')
                 if current_expiry > now:
-                    new_expiry = current_expiry + timedelta(days=days)
+                    new_expiry = current_expiry + timedelta(minutes=total_minutes)
                 else:
-                    new_expiry = now + timedelta(days=days)
+                    new_expiry = now + timedelta(minutes=total_minutes)
             except:
-                new_expiry = now + timedelta(days=days)
+                new_expiry = now + timedelta(minutes=total_minutes)
         else:
-            new_expiry = now + timedelta(days=days)
+            new_expiry = now + timedelta(minutes=total_minutes)
             
         purchase_date = now.strftime('%Y-%m-%d %H:%M:%S')
         new_expiry_str = new_expiry.strftime('%Y-%m-%d %H:%M:%S')
@@ -302,7 +302,40 @@ def extend_subscription_db(user_id, days):
         conn.close()
         return new_expiry_str
 
-def remove_subscription_db(user_id):
+def reduce_subscription_db(user_id, total_minutes):
+    with DB_LOCK:
+        conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
+        c = conn.cursor()
+        now = datetime.now()
+        c.execute('SELECT expiry_date FROM purchases WHERE user_id = ? ORDER BY expiry_date DESC LIMIT 1', (user_id,))
+        result = c.fetchone()
+        conn.close()
+
+        if not result:
+            return None, "بەکارهێنەر بەشداریکردنی نییە"
+
+        try:
+            current_expiry = datetime.strptime(result[0], '%Y-%m-%d %H:%M:%S')
+        except:
+            return None, "هەڵە لە خوێندنەوەی کات"
+
+        new_expiry = current_expiry - timedelta(minutes=total_minutes)
+
+        # ئەگەر کات بچێتە ژێر ئێستا، بەسەرچووە بە ئێستاوە
+        if new_expiry < now:
+            new_expiry = now
+
+        new_expiry_str = new_expiry.strftime('%Y-%m-%d %H:%M:%S')
+
+        with DB_LOCK:
+            conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
+            c = conn.cursor()
+            c.execute('UPDATE purchases SET expiry_date = ? WHERE user_id = ? AND expiry_date = ?',
+                      (new_expiry_str, user_id, result[0]))
+            conn.commit()
+            conn.close()
+
+        return new_expiry_str, None
     with DB_LOCK:
         conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
         c = conn.cursor()
@@ -896,7 +929,8 @@ def admin_panel_button(message):
     "📊 ئاماری بۆت", "💰 لیستی کڕیارەکان", "➕ زیادکردنی کڕیار", "➖ سڕینەوەی کڕیار",
     "📢 زیادکردنی جۆین", "📢 سڕینەوەی جۆین", "📋 لیستی جۆین", "🔒 قفڵکردن/کردنەوە",
     "🆓 بێ بەرامبەر/بەپارە", "➕ زیادکردنی ئەدمین", "➖ سڕینەوەی ئەدمین", 
-    "📋 لیستی ئەدمینەکان", "📢 ناردنی گشتی", "⏳ درێژکردنەوەی کات", "👥 لیستی بەکارهێنەران"
+    "📋 لیستی ئەدمینەکان", "📢 ناردنی گشتی", "⏳ درێژکردنەوەی کات",
+    "👥 لیستی بەکارهێنەران", "⏱️ کەمکردنەوەی کات"
 ])
 def owner_panel_actions(message):
     user_id = message.from_user.id
@@ -999,7 +1033,9 @@ def owner_panel_actions(message):
         msg = "👥 <b>لیست:</b>\n" + "\n".join([f"👤 {a['user_id']}" for a in admins])
         bot.send_message(message.chat.id, msg, parse_mode='HTML')
 
-    elif action == "👥 لیستی بەکارهێنەران":
+    elif action == "⏱️ کەمکردنەوەی کات":
+        msg = bot.send_message(message.chat.id, "📝 ئایدی بەکارهێنەر بنێرە:")
+        bot.register_next_step_handler(msg, process_reduce_sub_step1)
         if user_id != OWNER_ID and not is_admin(user_id): return
         with DB_LOCK:
             conn = sqlite3.connect(DATABASE_PATH, check_same_thread=False)
@@ -1034,35 +1070,112 @@ def process_broadcast(message):
         except: pass
     bot.edit_message_text(f"✅ نامەکە نێردرا بۆ {sent} بەکارهێنەر.", message.chat.id, msg.message_id)
 
+def parse_duration(text):
+    """
+    فۆرماتی پشتگیریکراو:
+      30          → 30 خولەک
+      1:30        → 1 سەحات و 30 خولەک
+      2:12:30     → 2 ڕۆژ، 12 سەحات، 30 خولەک
+    دەگەڕێنێتەوە: کۆی خولەکەکان (int) یان None ئەگەر هەڵە بوو
+    """
+    parts = text.strip().split(':')
+    try:
+        if len(parts) == 1:
+            return int(parts[0])                                      # خولەک
+        elif len(parts) == 2:
+            return int(parts[0]) * 60 + int(parts[1])                # سەحات:خولەک
+        elif len(parts) == 3:
+            return int(parts[0]) * 1440 + int(parts[1]) * 60 + int(parts[2])  # ڕۆژ:سەحات:خولەک
+    except:
+        return None
+
+def format_duration(total_minutes):
+    """خولەک → دەقی خوێندنەوە"""
+    days = total_minutes // 1440
+    hours = (total_minutes % 1440) // 60
+    mins = total_minutes % 60
+    parts = []
+    if days:  parts.append(f"{days} ڕۆژ")
+    if hours: parts.append(f"{hours} سەحات")
+    if mins:  parts.append(f"{mins} خولەک")
+    return " و ".join(parts) if parts else "0 خولەک"
+
 def process_add_sub_step1(message):
     try:
         user_id = int(message.text)
-        msg = bot.send_message(message.chat.id, "⏳ چەند ڕۆژ؟")
+        msg = bot.send_message(message.chat.id,
+            "⏳ <b>کاتی بەشداریکردن بنووسە:</b>\n\n"
+            "فۆرماتەکان:\n"
+            "• <code>30</code> ← 30 خولەک\n"
+            "• <code>1:30</code> ← 1 سەحات و 30 خولەک\n"
+            "• <code>2:12:30</code> ← 2 ڕۆژ، 12 سەحات، 30 خولەک",
+            parse_mode='HTML')
         bot.register_next_step_handler(msg, lambda m: process_add_sub_step2(m, user_id))
     except: bot.send_message(message.chat.id, "❌ ئایدی هەڵەیە.")
 
 def process_add_sub_step2(message, user_id):
-    try:
-        days = int(message.text)
-        add_subscription_manual(user_id, days)
-        bot.send_message(message.chat.id, f"✅ بەشداریکردن بۆ {user_id} بۆ {days} ڕۆژ زیادکرا.")
-    except: bot.send_message(message.chat.id, "❌ هەڵە.")
+    total_minutes = parse_duration(message.text)
+    if total_minutes is None or total_minutes <= 0:
+        return bot.send_message(message.chat.id, "❌ فۆرمات هەڵەیە. نموونە: <code>2:12:30</code>", parse_mode='HTML')
+    add_subscription_manual(user_id, total_minutes)
+    bot.send_message(message.chat.id,
+        f"✅ بەشداریکردن زیادکرا.\n"
+        f"👤 بەکارهێنەر: <code>{user_id}</code>\n"
+        f"⏱️ ماوە: <b>{format_duration(total_minutes)}</b>",
+        parse_mode='HTML')
 
 def process_extend_sub_step1(message):
     try:
         user_id = int(message.text)
-        msg = bot.send_message(message.chat.id, "⏳ چەند ڕۆژی بۆ درێژ بکرێتەوە؟")
+        msg = bot.send_message(message.chat.id,
+            "⏳ <b>کاتی زیادکردن بنووسە:</b>\n\n"
+            "فۆرماتەکان:\n"
+            "• <code>30</code> ← 30 خولەک\n"
+            "• <code>1:30</code> ← 1 سەحات و 30 خولەک\n"
+            "• <code>2:12:30</code> ← 2 ڕۆژ، 12 سەحات، 30 خولەک",
+            parse_mode='HTML')
         bot.register_next_step_handler(msg, lambda m: process_extend_sub_step2(m, user_id))
     except: bot.send_message(message.chat.id, "❌ ئایدی هەڵەیە.")
 
 def process_extend_sub_step2(message, user_id):
-    try:
-        days = int(message.text)
-        new_expiry = extend_subscription_db(user_id, days)
-        bot.send_message(message.chat.id, f"✅ کاتی بەکارهێنەر {user_id} درێژکرایەوە.\n📅 بەسەرچوونی نوێ: {new_expiry}")
-    except Exception as e: bot.send_message(message.chat.id, f"❌ هەڵە: {e}")
+    total_minutes = parse_duration(message.text)
+    if total_minutes is None or total_minutes <= 0:
+        return bot.send_message(message.chat.id, "❌ فۆرمات هەڵەیە. نموونە: <code>2:12:30</code>", parse_mode='HTML')
+    new_expiry = extend_subscription_db(user_id, total_minutes)
+    bot.send_message(message.chat.id,
+        f"✅ کات درێژکرایەوە.\n"
+        f"👤 بەکارهێنەر: <code>{user_id}</code>\n"
+        f"➕ زیادکرا: <b>{format_duration(total_minutes)}</b>\n"
+        f"📅 بەسەرچوونی نوێ: <b>{new_expiry}</b>",
+        parse_mode='HTML')
 
-def process_remove_sub(message):
+def process_reduce_sub_step1(message):
+    try:
+        user_id = int(message.text)
+        msg = bot.send_message(message.chat.id,
+            "⏱️ <b>کاتی کەمکردنەوە بنووسە:</b>\n\n"
+            "فۆرماتەکان:\n"
+            "• <code>30</code> ← 30 خولەک\n"
+            "• <code>1:30</code> ← 1 سەحات و 30 خولەک\n"
+            "• <code>2:12:30</code> ← 2 ڕۆژ، 12 سەحات، 30 خولەک",
+            parse_mode='HTML')
+        bot.register_next_step_handler(msg, lambda m: process_reduce_sub_step2(m, user_id))
+    except:
+        bot.send_message(message.chat.id, "❌ ئایدی هەڵەیە.")
+
+def process_reduce_sub_step2(message, user_id):
+    total_minutes = parse_duration(message.text)
+    if total_minutes is None or total_minutes <= 0:
+        return bot.send_message(message.chat.id, "❌ فۆرمات هەڵەیە. نموونە: <code>2:12:30</code>", parse_mode='HTML')
+    new_expiry, err = reduce_subscription_db(user_id, total_minutes)
+    if err:
+        return bot.send_message(message.chat.id, f"❌ {err}")
+    bot.send_message(message.chat.id,
+        f"✅ کات کەمکرایەوە.\n"
+        f"👤 بەکارهێنەر: <code>{user_id}</code>\n"
+        f"➖ کەمکرا: <b>{format_duration(total_minutes)}</b>\n"
+        f"📅 بەسەرچوونی نوێ: <b>{new_expiry}</b>",
+        parse_mode='HTML')
     try:
         remove_subscription_db(int(message.text))
         bot.send_message(message.chat.id, "✅ سڕایەوە.")
