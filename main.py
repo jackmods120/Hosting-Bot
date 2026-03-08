@@ -137,7 +137,7 @@ def init_db():
         c.execute("PRAGMA table_info(active_users)")
         au_columns = [column[1] for column in c.fetchall()]
         if 'slots' not in au_columns:
-            c.execute('ALTER TABLE active_users ADD COLUMN slots INTEGER DEFAULT 1')
+            c.execute('ALTER TABLE active_users ADD COLUMN slots INTEGER DEFAULT 0')
         if 'referred_by' not in au_columns:
             c.execute('ALTER TABLE active_users ADD COLUMN referred_by INTEGER')
 
@@ -179,7 +179,7 @@ def add_user_to_db(user_id, referrer_id=None):
         is_new_user = False
         if exists is None:
             c.execute('INSERT INTO active_users (user_id, slots, referred_by) VALUES (?, ?, ?)', 
-                      (user_id, 1, referrer_id))
+                      (user_id, 0, referrer_id))
             is_new_user = True
         
         conn.commit()
@@ -193,9 +193,9 @@ def get_user_slots(user_id):
         c.execute('SELECT slots FROM active_users WHERE user_id = ?', (user_id,))
         result = c.fetchone()
         conn.close()
-        if result and result[0]:
+        if result and result[0] is not None:
             return result[0]
-        return 1
+        return 0
 
 def increment_user_slots(user_id):
     with DB_LOCK:
